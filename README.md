@@ -361,9 +361,9 @@ python -m http.server 8080
 | `qa-login.html` | Login por perfil, validação de credenciais e estados da tela | `LOGIN OK 18` |
 | `qa-layout.html` | Responsividade desktop/mobile e ausência de overflow horizontal | `LAYOUT OK 37` |
 | `qa-map.html` | Renderização do Google Maps/fallback | `MAP GOOGLE OK` |
-| `qa-v2.html` | Rota da manhã preservada, rota da tarde ponta a ponta, primeiro acesso + logout/login, recuperação com código antigo rejeitado e isolamento de segurança | `QA V2 OK 79` |
+| `qa-v2.html` | Rota da manhã preservada, rota da tarde ponta a ponta, primeiro acesso + logout/login, recuperação com código antigo rejeitado e isolamento de segurança | `QA V2 OK 81` |
 
-O título da aba mostra o resultado (`QA OK N` / `QA FAIL N`), e a página lista cada verificação com `PASS`/`FAIL`. O `qa-v2.html` também cobre: entrega sem embarque bloqueada, entrega duplicada bloqueada, aluno entregue que não pode reembarcar, finalização bloqueada com pendências, notificação segmentada por família, troca de e-mail que desvincula a família anterior, hash de senha sem texto puro, código de ativação/recuperação de uso único e modal de login em 390 px.
+O título da aba mostra o resultado (`QA OK N` / `QA FAIL N`), e a página lista cada verificação com `PASS`/`FAIL`. O `qa-v2.html` também cobre: entrega sem embarque bloqueada, entrega duplicada bloqueada, aluno entregue que não pode reembarcar, finalização bloqueada com pendências, notificação segmentada por família, troca de e-mail que desvincula a família anterior, hash de senha sem texto puro, código de ativação/recuperação de uso único, botão de mostrar/ocultar senha e modal de login em 390 px.
 
 ---
 

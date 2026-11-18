@@ -207,6 +207,20 @@
         !!q(ld, '#actEmail') && !!q(ld, '#actCode') && !!q(ld, '#actPass') && !!q(ld, '#actPass2'),
         'campos presentes'
       );
+      const actPassInput = q(ld, '#actPass');
+      const actPassToggle = q(ld, '[data-toggle-pass="actPass"]');
+      check(
+        'botão mostrar/ocultar senha no primeiro acesso',
+        !!actPassToggle && actPassInput.type === 'password',
+        actPassInput ? actPassInput.type : 'campo ausente'
+      );
+      if (actPassToggle) {
+        click(actPassToggle);
+        await sleep(120);
+        check('senha visível ao clicar em mostrar', actPassInput.type === 'text', actPassInput.type);
+        click(actPassToggle);
+        await sleep(120);
+      }
 
       q(ld, '#actEmail').value = 'rafael.rocha@kombitech.app';
       q(ld, '#actCode').value = 'KT-XXXX-XXXX';
