@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071629">
+  <meta name="description" content="KombiTech — rastreamento inteligente de transporte escolar. Acompanhe alunos, rotas e embarques com segurança.">
+  <title>Entrar · KombiTech</title>
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+  <div class="auth">
+    <section class="auth-brand">
+      <div class="brand">
+        <div class="brand-mark" id="brandMark"></div>
+        <div class="brand-text">
+          <div class="brand-name">Kombi<span>Tech</span></div>
+          <div class="brand-tag">Transporte escolar</div>
+        </div>
+      </div>
+
+      <div class="auth-hero">
+        <span class="auth-eyebrow">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>
+          Plataforma de transporte escolar
+        </span>
+        <h1>Rastreamento inteligente, <em>do primeiro aluno até a escola.</em></h1>
+        <p>Organize a sequência de embarques, acompanhe o trajeto em tempo real e dê tranquilidade às famílias — tudo em um painel simples para o motorista.</p>
+
+        <div class="auth-feats">
+          <div class="auth-feat">
+            <div class="auth-feat-ico">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10.4c0 6-8 11.6-8 11.6S4 16.4 4 10.4a8 8 0 0 1 16 0Z"/><path d="M15 10.2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+            </div>
+            <div><b>Rota guiada parada por parada</b><span>O próximo aluno aparece em destaque, com endereço completo.</span></div>
+          </div>
+          <div class="auth-feat">
+            <div class="auth-feat-ico">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.1l-3-3"/></svg>
+            </div>
+            <div><b>Embarque confirmado automaticamente</b><span>Detecção por proximidade com confirmação manual de reserva.</span></div>
+          </div>
+          <div class="auth-feat">
+            <div class="auth-feat-ico">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5.4L12 2 4 5.4V12c0 6 8 10 8 10Z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div><b>Dados protegidos por padrão</b><span>Acesso restrito ao motorista, em conformidade com a LGPD.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-preview" aria-hidden="true">
+        <div class="auth-preview-top">
+          <div class="auth-preview-title"><span class="live-dot"></span>Rota da manhã · ao vivo</div>
+          <span class="badge" style="background:rgba(255,255,255,.1);color:#A9C0DC;font-size:9.5px">Prévia</span>
+        </div>
+        <div class="auth-preview-row done"><span class="dot">1</span><span class="nm">Ana Beatriz Souza</span><span class="st">Pego</span></div>
+        <div class="auth-preview-row done"><span class="dot">2</span><span class="nm">Lucas Ferreira Lima</span><span class="st">Pego</span></div>
+        <div class="auth-preview-row next"><span class="dot">3</span><span class="nm">Sofia Almeida Rocha</span><span class="st">Próximo</span></div>
+        <div class="auth-preview-row"><span class="dot">4</span><span class="nm">Miguel Santos Oliveira</span><span class="st">Aguardando</span></div>
+        <div class="auth-preview-progress"><i></i></div>
+      </div>
+
+      <div class="auth-foot">
+        <span class="secure">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 11h13a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 18.5 22h-13A1.5 1.5 0 0 1 4 20.5v-8A1.5 1.5 0 0 1 5.5 11ZM8 11V7.2a4 4 0 0 1 8 0V11"/></svg>
+          Ambiente seguro · Dados criptografados em trânsito
+        </span>
+        <span>© <span id="year"></span> KombiTech</span>
+      </div>
+    </section>
+
+    <section class="auth-panel">
+      <div class="auth-panel-inner">
+        <div class="brand brand-mobile">
+          <div class="brand-mark" id="brandMarkMobile"></div>
+          <div class="brand-text">
+            <div class="brand-name" style="color:var(--navy)">Kombi<span style="color:var(--blue)">Tech</span></div>
+            <div class="brand-tag" style="color:var(--muted)">Transporte escolar</div>
+          </div>
+        </div>
+
+        <h2 class="auth-title" id="authTitle">Bem-vindo de volta</h2>
+        <p class="auth-sub" id="authSub">Entre com sua conta de motorista para acompanhar a rota de hoje.</p>
+
+        <div class="auth-role-switch" id="roleSwitch" role="tablist" aria-label="Tipo de acesso">
+          <button type="button" class="auth-role active" data-role="driver" role="tab" aria-selected="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 16.5V7.8A1.8 1.8 0 0 1 4.3 6h9.3l5 5.1v5.4M14.6 6v5.1H19M5.2 16.5h1.3M11 16.5h3.6M18.6 16.5h2.9M9 16.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0ZM20.4 16.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0Z"/></svg>
+            <span><b>Motorista</b><small>Painel da rota</small></span>
+          </button>
+          <button type="button" class="auth-role" data-role="guardian" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-1.8a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V21M9 11.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2M22 21v-1.8a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span><b>Responsável</b><small>Acompanhar meu filho</small></span>
+          </button>
+        </div>
+
+        <form class="auth-form" id="loginForm" novalidate>
+          <div class="auth-error" id="loginError" role="alert">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01"/></svg>
+            <span id="loginErrorText"></span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="email">Usuário ou e-mail</label>
+            <div class="input-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2ZM22 7l-10 6L2 7"/></svg>
+              <input class="input" id="email" name="email" type="text" inputmode="email" autocomplete="username" placeholder="motorista@kombitech.app" spellcheck="false">
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="row-between">
+              <label class="label" for="password">Senha</label>
+              <button type="button" class="auth-link" id="forgotBtn">Esqueci minha senha</button>
+            </div>
+            <div class="input-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 11h13a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 18.5 22h-13A1.5 1.5 0 0 1 4 20.5v-8A1.5 1.5 0 0 1 5.5 11ZM8 11V7.2a4 4 0 0 1 8 0V11"/></svg>
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha">
+              <button type="button" class="icon-btn trail" id="togglePass" aria-label="Mostrar senha">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <label class="check">
+            <input type="checkbox" id="consent">
+            <span>Li e aceito a <a href="#" id="privacyLink">política de privacidade</a> e o tratamento dos meus dados conforme a LGPD.</span>
+          </label>
+
+          <button class="btn btn-primary btn-block auth-submit" id="submitBtn" type="submit">
+            <span>Entrar</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </button>
+        </form>
+
+        <p class="auth-first-access">Primeiro acesso? <button type="button" class="auth-link" id="activateBtn">Ative sua conta</button></p>
+
+        <div class="auth-sep">ou</div>
+
+        <button class="btn btn-ghost btn-block" id="demoBtn" type="button">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>
+          <span id="demoBtnLabel">Entrar como motorista (demo)</span>
+        </button>
+
+        <div class="auth-demo">
+          <b>Acessos de demonstração</b>
+          <div class="auth-demo-account" id="demoDriverRow">
+            <div>
+              <span class="auth-demo-role">Motorista</span>
+              <code>motorista@kombitech.app</code> · <code>kombi1234</code>
+            </div>
+            <button class="btn btn-soft btn-xs" id="fillDemoDriver" type="button">Usar</button>
+          </div>
+          <div class="auth-demo-account" id="demoGuardianRow">
+            <div>
+              <span class="auth-demo-role">Responsável</span>
+              <code>responsavel@kombitech.app</code> · <code>kombi1234</code>
+            </div>
+            <button class="btn btn-soft btn-xs" id="fillDemoGuardian" type="button">Usar</button>
+          </div>
+          <div class="auth-demo-row">
+            <span>Dados fictícios, apenas para avaliação.</span>
+          </div>
+        </div>
+
+        <p class="auth-help">Ambiente protegido · <a id="helpLink">Precisa de ajuda?</a></p>
+      </div>
+    </section>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <div id="modal-root"></div>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script src="assets/js/login.js"></script>
+</body>
+</html>

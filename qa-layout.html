@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>KombiTech QA Layout</title>
+  <style>body{font:12px/1.45 monospace;background:#0d1b2a;color:#e8f0fa;padding:16px}#out{white-space:pre-wrap;position:relative;z-index:2;background:#0d1b2a}iframe{position:absolute;left:0;top:0;border:0;z-index:1;background:#fff}</style>
+</head>
+<body>
+  <pre id="out">iniciando…</pre>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/services.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    const lines = [];
+    const results = [];
+    const errors = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+    function check(name, ok, detail) {
+      results.push({ name, ok: !!ok });
+      log((ok ? 'PASS  ' : 'FAIL  ') + name + (detail ? ' — ' + detail : ''));
+    }
+    async function waitFor(fn, timeout) {
+      const end = Date.now() + (timeout || 12000);
+      while (Date.now() < end) {
+        try { if (fn()) return true; } catch (e) {}
+        await sleep(100);
+      }
+      return false;
+    }
+    let frame = null;
+    async function mountApp(width, height) {
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.style.width = width + 'px';
+      frame.style.height = height + 'px';
+      frame.src = 'app.html#/inicio';
+      document.body.appendChild(frame);
+      await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      w.addEventListener('error', (e) => errors.push('error: ' + (e.message || e.error)));
+      w.addEventListener('unhandledrejection', (e) => errors.push('promise: ' + (e.reason && (e.reason.message || e.reason))));
+      await waitFor(() => d.querySelector('#view .page-head, #view .hero'), 15000);
+      return { w, d };
+    }
+    async function go(ctx, view) {
+      ctx.w.location.hash = '#/' + view;
+      await sleep(350);
+      await waitFor(() => ctx.d.querySelector('#view .page-head, #view .hero, #view .map-shell, #view .map-layout'), 8000);
+      await sleep(250);
+      return ctx.d;
+    }
+    function overflow(d) {
+      const de = d.documentElement;
+      return Math.max(0, de.scrollWidth - de.clientWidth);
+    }
+    function overflowDetails(d) {
+      const width = d.documentElement.clientWidth;
+      const list = [];
+      d.querySelectorAll('body *').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.right > width + 1) {
+          list.push({
+            tag: el.tagName.toLowerCase(),
+            cls: String(el.className || '').slice(0, 70),
+            id: el.id || '',
+            left: Math.round(r.left),
+            right: Math.round(r.right),
+            width: Math.round(r.width)
+          });
+        }
+      });
+      list.sort((a, b) => b.right - a.right);
+      return list.slice(0, 12);
+    }
+    function cs(el, prop) { return el ? getComputedStyle(el)[prop] : 'n/a'; }
+    try {
+      await KT.store.resetDemo();
+      await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      let ctx = await mountApp(1440, 1000);
+      let d = ctx.d;
+      check('desktop sem overflow horizontal', overflow(d) === 0, overflow(d) + 'px');
+      check('sidebar desktop visível', cs(d.querySelector('.sidebar'), 'display') !== 'none', cs(d.querySelector('.sidebar'), 'width'));
+      check('mobile nav escondida no desktop', cs(d.querySelector('.mobile-nav'), 'display') === 'none', cs(d.querySelector('.mobile-nav'), 'display'));
+      const statCols = cs(d.querySelector('.stat-grid'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('dashboard em grid de cartões', statCols >= 4, statCols + ' colunas');
+      const mapBox = d.querySelector('#dashMap');
+      check('mapa do dashboard com altura', mapBox && mapBox.getBoundingClientRect().height > 300, mapBox ? Math.round(mapBox.getBoundingClientRect().height) + 'px' : 'ausente');
+
+      d = await go(ctx, 'rotas');
+      check('rotas sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const traffic = d.querySelector('.traffic-grid');
+      check('painel de trânsito em duas colunas', cs(traffic, 'gridTemplateColumns').split(' ').filter(Boolean).length === 2, cs(traffic, 'gridTemplateColumns'));
+
+      d = await go(ctx, 'mensagens');
+      check('mensagens sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const chatCols = cs(d.querySelector('.chat-layout'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('chat desktop em duas colunas', chatCols === 2, chatCols + ' colunas');
+
+      d = await go(ctx, 'calendario');
+      check('calendário sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const calCols = cs(d.querySelector('.cal-grid'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('calendário com 7 colunas', calCols === 7, calCols + ' colunas');
+
+      d = await go(ctx, 'configuracoes');
+      check('configurações sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      d = await go(ctx, 'perfil');
+      check('perfil sem overflow', overflow(d) === 0, overflow(d) + 'px');
+
+      /* Mobile do motorista */
+      ctx.w.KT.store.logout();
+      await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      ctx = await mountApp(390, 844);
+      d = ctx.d;
+      check('mobile sem overflow no início', overflow(d) === 0, overflow(d) + 'px');
+      const sideRect = d.querySelector('.sidebar').getBoundingClientRect();
+      check('sidebar fora da tela no mobile', sideRect.right <= 0, Math.round(sideRect.right) + 'px');
+      check('mobile nav visível no mobile', cs(d.querySelector('.mobile-nav'), 'display') === 'block', cs(d.querySelector('.mobile-nav'), 'display'));
+      check('barra de rota visível no mobile', cs(d.querySelector('.mobile-routebar'), 'display') === 'flex', cs(d.querySelector('.mobile-routebar'), 'display'));
+      const mMap = d.querySelector('#dashMap');
+      check('mapa mobile com altura útil', mMap && mMap.getBoundingClientRect().height > 240, mMap ? Math.round(mMap.getBoundingClientRect().height) + 'px' : 'ausente');
+
+      d = await go(ctx, 'rotas');
+      check('rotas mobile sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const mTraffic = d.querySelector('.traffic-grid');
+      check('trânsito mobile em uma coluna', cs(mTraffic, 'gridTemplateColumns').split(' ').filter(Boolean).length === 1, cs(mTraffic, 'gridTemplateColumns'));
+
+      d = await go(ctx, 'mensagens');
+      check('mensagens mobile sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const mChat = cs(d.querySelector('.chat-layout'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('chat mobile em uma coluna', mChat === 1, mChat + ' colunas');
+
+      d = await go(ctx, 'calendario');
+      check('calendário mobile sem overflow', overflow(d) === 0, overflow(d) + 'px');
+
+      /* Responsável desktop */
+      ctx.w.KT.store.logout();
+      await KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'guardian');
+      ctx = await mountApp(1440, 1000);
+      d = ctx.d;
+      check('responsável desktop sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      check('hero da família visível', !!d.querySelector('.guardian-hero'), 'ok');
+      const gStats = d.querySelector('.stat-grid-4');
+      check('indicadores da família em 4 colunas', gStats && cs(gStats, 'gridTemplateColumns').split(' ').filter(Boolean).length === 4, gStats ? cs(gStats, 'gridTemplateColumns') : 'ausente');
+      const gMap = d.querySelector('#gHomeMap');
+      check('mapa resumido do responsável', gMap && gMap.getBoundingClientRect().height > 200, gMap ? Math.round(gMap.getBoundingClientRect().height) + 'px' : 'ausente');
+
+      d = await go(ctx, 'mapa');
+      check('mapa do responsável sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const gMapCols = cs(d.querySelector('.guardian-map-layout'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('mapa do responsável em duas colunas', gMapCols === 2, gMapCols + ' colunas');
+
+      d = await go(ctx, 'notificacoes');
+      check('notificações sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      d = await go(ctx, 'perfil');
+      check('perfil do responsável sem overflow', overflow(d) === 0, overflow(d) + 'px');
+
+      /* Responsável mobile */
+      ctx.w.KT.store.logout();
+      await KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'guardian');
+      ctx = await mountApp(390, 844);
+      d = ctx.d;
+      check('responsável mobile sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      if (overflow(d) > 0) log('OVERFLOW ' + d.documentElement.scrollWidth + '/' + d.documentElement.clientWidth + ': ' + JSON.stringify(overflowDetails(d)));
+      check('mobile nav do responsável visível', cs(d.querySelector('.mobile-nav'), 'display') === 'block', cs(d.querySelector('.mobile-nav'), 'display'));
+      check('5 ações no mobile do responsável', d.querySelectorAll('.mobile-nav .mnav-item').length === 5, d.querySelectorAll('.mobile-nav .mnav-item').length + ' itens');
+      d = await go(ctx, 'mapa');
+      check('mapa do responsável mobile sem overflow', overflow(d) === 0, overflow(d) + 'px');
+      const gmCols = cs(d.querySelector('.guardian-map-layout'), 'gridTemplateColumns').split(' ').filter(Boolean).length;
+      check('mapa do responsável mobile em uma coluna', gmCols === 1, gmCols + ' colunas');
+
+      check('sem erros de runtime no layout', errors.length === 0, errors.join(' | ') || 'nenhum');
+      const failed = results.filter((r) => !r.ok).length;
+      log('');
+      log('RESULTADO: ' + (results.length - failed) + '/' + results.length + ' passaram, ' + failed + ' falharam');
+      document.title = failed ? 'LAYOUT FAIL ' + failed : 'LAYOUT OK ' + results.length;
+    } catch (e) {
+      log('CRASH: ' + (e && (e.stack || e.message || e)));
+      document.title = 'LAYOUT CRASH';
+    }
+  })();
+  </script>
+</body>
+</html>

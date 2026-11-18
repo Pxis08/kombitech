@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>KombiTech QA v2</title>
+  <style>
+    body{font:14px/1.45 monospace;background:#0d1b2a;color:#e8f0fa;padding:20px}
+    #out{white-space:pre-wrap;max-width:1200px}
+    iframe{position:fixed;left:-9999px;top:0;width:1440px;height:1000px;border:0}
+    .ok{color:#6ee7a8}.fail{color:#ff8a8a}.warn{color:#ffd166}
+  </style>
+</head>
+<body>
+  <pre id="out">iniciando…</pre>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/services.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script>
+  (async function () {
+    'use strict';
+    const out = document.getElementById('out');
+    const results = [];
+    const errors = [];
+    const lines = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function check(name, ok, detail) {
+      results.push({ name, ok: !!ok, detail: detail == null ? '' : String(detail) });
+      lines.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+      out.textContent = lines.join('\n');
+    }
+    function logError(source, message) {
+      errors.push(source + ': ' + message);
+      lines.push('ERROR ' + source + ': ' + message);
+      out.textContent = lines.join('\n');
+    }
+    async function waitFor(fn, timeout, label) {
+      const end = Date.now() + (timeout || 8000);
+      while (Date.now() < end) {
+        try { if (fn()) return true; } catch (e) { /* keep waiting */ }
+        await sleep(80);
+      }
+      throw new Error('timeout: ' + (label || 'waitFor'));
+    }
+    function q(doc, sel) { return doc.querySelector(sel); }
+    function qa(doc, sel) { return Array.from(doc.querySelectorAll(sel)); }
+    function click(el) {
+      if (!el) throw new Error('elemento inexistente para clique');
+      el.click();
+    }
+
+    let frame = null;
+    async function mountApp(width) {
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.style.width = (width || 1440) + 'px';
+      frame.style.height = '1000px';
+      frame.src = 'app.html';
+      document.body.appendChild(frame);
+      await new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      w.addEventListener('error', (e) => logError('app', e.message || e.error));
+      w.addEventListener('unhandledrejection', (e) => logError('app-promise', e.reason && (e.reason.message || e.reason)));
+      await waitFor(() => q(d, '#app .sidebar') && q(d, '#view') && q(d, '#view').children.length > 0, 14000, 'app boot');
+      await sleep(450);
+      return { frame, w, d };
+    }
+    async function mountLogin() {
+      const f = document.createElement('iframe');
+      f.style.cssText = 'position:fixed;left:-9999px;top:0;width:1280px;height:900px;border:0';
+      f.src = 'index.html';
+      document.body.appendChild(f);
+      await new Promise((resolve) => f.addEventListener('load', resolve, { once: true }));
+      const d = f.contentDocument;
+      await waitFor(() => q(d, '#loginForm'), 14000, 'login boot');
+      await sleep(300);
+      return { frame: f, w: f.contentWindow, d };
+    }
+    function closeFrame(f) {
+      if (f && f.parentNode) f.parentNode.removeChild(f);
+    }
+    async function go(ctx, name) {
+      ctx.w.location.hash = '#/' + name;
+      await sleep(450);
+      await waitFor(() => q(ctx.d, '#view') && q(ctx.d, '#view').children.length > 0, 6000, 'view ' + name);
+      await sleep(150);
+      return ctx.d.querySelector('#view');
+    }
+    async function appLogout(ctx) {
+      try { ctx.w.KT.store.logout(); } catch (e) { /* ignore */ }
+      if (ctx.frame && ctx.frame.parentNode) ctx.frame.parentNode.removeChild(ctx.frame);
+      frame = null;
+      await sleep(150);
+    }
+
+    try {
+      window.addEventListener('error', (e) => logError('parent', e.message || e.error));
+      window.addEventListener('unhandledrejection', (e) => logError('parent-promise', e.reason && (e.reason.message || e.reason)));
+
+      /* ================================================================
+         1. Rota da manhã preservada
+         ================================================================ */
+      await KT.store.resetDemo();
+      const driverLogin = await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      check('login do motorista', driverLogin.ok === true && driverLogin.session.role === 'driver', driverLogin.session && driverLogin.session.role);
+
+      let ctx = await mountApp(1440);
+      let d = ctx.d;
+      check('painel do motorista carregado', !!q(d, '#view .hero') && !!q(d, '#view .map-shell'), 'hero + mapa');
+
+      await ctx.w.KT.engine.start();
+      ctx.w.KT.engine.pause();
+      let st = ctx.w.KT.engine.getState();
+      check('rota da manhã preservada', st.shift === 'morning' && st.stats.total === 8, JSON.stringify(st.stats));
+      check('primeiro aluno é a próxima parada', !!st.next && st.next.id === 'stu_1', st.next && st.next.name);
+
+      const school = ctx.w.KT.store.get().school;
+      const morningEnd = st.geometry[st.geometry.length - 1];
+      check(
+        'trajeto da manhã termina na escola',
+        !!morningEnd && KT.geo.haversine(morningEnd, school) < 1500,
+        morningEnd ? Math.round(KT.geo.haversine(morningEnd, school)) + ' m' : 'sem geometria'
+      );
+
+      const g1BeforeMorning = ctx.w.KT.store.notificationsFor('guardian', 'gua_1').length;
+      ctx.w.KT.engine.confirmPick();
+      await sleep(250);
+      const anaMorning = ctx.w.KT.store.student('stu_1');
+      check('embarque individual na manhã', anaMorning.status === 'picked' && !!anaMorning.boardedAt, anaMorning.status);
+      const g1Morning = ctx.w.KT.store.notificationsFor('guardian', 'gua_1');
+      check(
+        'embarque da manhã notifica o responsável',
+        g1Morning.length > g1BeforeMorning && g1Morning.some((n) => n.type === 'boarding' && n.studentId === 'stu_1'),
+        'notificação de embarque'
+      );
+      check(
+        'falha de entrega não existe na manhã',
+        ctx.w.KT.engine.failDelivery('stu_1') === false && ctx.w.KT.store.student('stu_1').status === 'picked',
+        'bloqueada'
+      );
+
+      const morningFinish = ctx.w.KT.engine.finish('manual');
+      check(
+        'finalização da manhã preservada',
+        morningFinish === true && ctx.w.KT.store.route('route-morning').status === 'done',
+        ctx.w.KT.store.route('route-morning').status
+      );
+
+      /* ---- Cadastro de aluno: e-mail e código de ativação do responsável ---- */
+      await go(ctx, 'alunos');
+      d = ctx.d;
+      check('lista de alunos mostra ativação pendente', /Ativação pendente/i.test(d.body.textContent), 'badge');
+      const editStu3 = q(d, '[data-edit="stu_3"]');
+      check('edição do aluno disponível', !!editStu3, editStu3 ? 'botão presente' : 'ausente');
+      if (editStu3) {
+        click(editStu3);
+        await sleep(350);
+        const emailField = q(d, '#fGuardianEmail');
+        check(
+          'formulário tem e-mail do responsável preenchido',
+          !!emailField && emailField.value === 'rafael.rocha@kombitech.app',
+          emailField ? emailField.value : 'campo ausente'
+        );
+        const closeEdit = q(d, '#modal-root [data-modal-close]');
+        if (closeEdit) click(closeEdit);
+        await sleep(200);
+      }
+      const activationBtn = q(d, '[data-activate="gua_4"]');
+      check('ação de código de ativação visível', !!activationBtn, activationBtn ? 'presente' : 'ausente');
+      if (activationBtn) {
+        click(activationBtn);
+        await sleep(350);
+        const codeBox = q(d, '#actCodeBox');
+        check(
+          'modal de ativação mostra o código individual',
+          !!codeBox && /^KT-/.test(codeBox.textContent.trim()),
+          codeBox ? codeBox.textContent.trim() : 'sem código'
+        );
+        const closeActivation = q(d, '#modal-root [data-modal-close]');
+        if (closeActivation) click(closeActivation);
+        await sleep(200);
+      }
+
+      await appLogout(ctx);
+
+      /* ================================================================
+         2. Primeiro acesso + logout/login
+         ================================================================ */
+      await KT.store.resetDemo();
+      const pendingBefore = KT.store.guardianAuthStatus('gua_4');
+      check(
+        'conta de primeiro acesso começa inativa e com código',
+        !!pendingBefore && pendingBefore.active === false && !!pendingBefore.code,
+        pendingBefore && pendingBefore.code
+      );
+      const activationCode = pendingBefore.code;
+
+      const loginFrame = await mountLogin();
+      let ld = loginFrame.d;
+      check('link "Primeiro acesso" visível', !!q(ld, '#activateBtn'), 'presente');
+      click(q(ld, '#activateBtn'));
+      await sleep(300);
+      check(
+        'modal de ativação tem e-mail, código e senha',
+        !!q(ld, '#actEmail') && !!q(ld, '#actCode') && !!q(ld, '#actPass') && !!q(ld, '#actPass2'),
+        'campos presentes'
+      );
+
+      q(ld, '#actEmail').value = 'rafael.rocha@kombitech.app';
+      q(ld, '#actCode').value = 'KT-XXXX-XXXX';
+      click(q(ld, '#actSubmit'));
+      await sleep(500);
+      check(
+        'código de ativação inválido é bloqueado',
+        /inválido/i.test(q(ld, '#actError').textContent),
+        q(ld, '#actError').textContent.trim()
+      );
+
+      q(ld, '#actCode').value = activationCode;
+      click(q(ld, '#actSubmit'));
+      await sleep(500);
+      check('etapa de criação de senha liberada', q(ld, '#actStep2').style.display === 'grid', q(ld, '#actStep2').style.display);
+
+      q(ld, '#actPass').value = 'NovaSenha#2026';
+      q(ld, '#actPass2').value = 'NovaSenha#2026';
+      click(q(ld, '#actSubmit'));
+      await sleep(1000);
+
+      const activated = loginFrame.w.KT.store.guardianAuthStatus('gua_4');
+      check(
+        'conta ativada pela interface',
+        !!activated && activated.active === true && activated.code === null,
+        JSON.stringify(activated)
+      );
+      const oldLogin = await loginFrame.w.KT.store.login('rafael.rocha@kombitech.app', 'kombi1234', true, 'guardian');
+      check('senha antiga/compartilhada rejeitada', oldLogin.ok === false, oldLogin.error);
+      const newLogin = await loginFrame.w.KT.store.login('rafael.rocha@kombitech.app', 'NovaSenha#2026', true, 'guardian');
+      check(
+        'login após primeiro acesso',
+        newLogin.ok === true && newLogin.session.guardianId === 'gua_4',
+        newLogin.session && newLogin.session.guardianId
+      );
+      loginFrame.w.KT.store.logout();
+      const reuseActivation = await loginFrame.w.KT.store.validateGuardianActivation('rafael.rocha@kombitech.app', activationCode);
+      check('código de ativação é de uso único', reuseActivation.ok === false, reuseActivation.error);
+
+      loginFrame.frame.style.width = '390px';
+      loginFrame.frame.style.height = '844px';
+      await sleep(500);
+      const loginDoc = loginFrame.d.documentElement;
+      check(
+        'login sem overflow horizontal em 390px',
+        loginDoc.scrollWidth <= loginDoc.clientWidth + 1,
+        (loginDoc.scrollWidth - loginDoc.clientWidth) + 'px'
+      );
+      click(q(ld, '#activateBtn'));
+      await sleep(350);
+      const loginModal = q(ld, '.modal');
+      const loginModalRect = loginModal ? loginModal.getBoundingClientRect() : null;
+      check(
+        'modal de primeiro acesso cabe em 390px',
+        !!loginModalRect && loginModalRect.width <= 390 && loginModalRect.left >= -1,
+        loginModalRect ? Math.round(loginModalRect.width) + 'px' : 'sem modal'
+      );
+      const closeLoginModal = q(ld, '#modal-root [data-modal-close]');
+      if (closeLoginModal) click(closeLoginModal);
+      await sleep(150);
+      closeFrame(loginFrame.frame);
+
+      /* ================================================================
+         3. Recuperação de senha + rejeição do código antigo
+         ================================================================ */
+      await KT.store.resetDemo();
+      const unknownRecovery = await KT.store.requestGuardianRecovery('naoexiste@example.com');
+      check(
+        'recuperação não revela existência da conta',
+        unknownRecovery.ok === true && !unknownRecovery.demoCode && !unknownRecovery.error,
+        JSON.stringify(unknownRecovery)
+      );
+
+      const loginFrame2 = await mountLogin();
+      ld = loginFrame2.d;
+      check('link "Esqueci minha senha" visível', !!q(ld, '#forgotBtn'), 'presente');
+      click(q(ld, '#forgotBtn'));
+      await sleep(300);
+      check('modal de recuperação tem e-mail', !!q(ld, '#recEmail'), 'presente');
+
+      q(ld, '#recEmail').value = 'responsavel@kombitech.app';
+      click(q(ld, '#recSubmit'));
+      await sleep(550);
+      check(
+        'código temporário exibido como simulação',
+        !!q(ld, '#recDemo code') && /Simulação/i.test(q(ld, '#recDemo').textContent),
+        q(ld, '#recDemo').textContent.trim()
+      );
+      const recoveryCode = q(ld, '#recDemo code').textContent.trim();
+
+      q(ld, '#recCode').value = recoveryCode;
+      q(ld, '#recPass').value = 'SenhaNova#2026';
+      q(ld, '#recPass2').value = 'SenhaNova#2026';
+      click(q(ld, '#recSubmit'));
+      await sleep(1000);
+
+      const oldGuardianLogin = await loginFrame2.w.KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'guardian');
+      check('senha antiga invalidada após recuperação', oldGuardianLogin.ok === false, oldGuardianLogin.error);
+      const recoveredLogin = await loginFrame2.w.KT.store.login('responsavel@kombitech.app', 'SenhaNova#2026', true, 'guardian');
+      check(
+        'login com a senha recuperada',
+        recoveredLogin.ok === true && recoveredLogin.session.guardianId === 'gua_1',
+        recoveredLogin.session && recoveredLogin.session.guardianId
+      );
+      loginFrame2.w.KT.store.logout();
+      const reuseRecovery = await loginFrame2.w.KT.store.resetGuardianPassword('responsavel@kombitech.app', recoveryCode, 'OutraSenha#2026');
+      check('código de recuperação é de uso único', reuseRecovery.ok === false, reuseRecovery.error);
+      closeFrame(loginFrame2.frame);
+
+      /* ================================================================
+         4. Rota da tarde ponta a ponta
+         ================================================================ */
+      await KT.store.resetDemo();
+      const driverAfternoon = await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      check('login do motorista para a tarde', driverAfternoon.ok === true, driverAfternoon.session && driverAfternoon.session.role);
+      check(
+        'rota da tarde selecionada',
+        KT.store.activateRoute('route-afternoon') === true && KT.store.activeRoute().shift === 'afternoon',
+        'afternoon'
+      );
+
+      ctx = await mountApp(1440);
+      d = ctx.d;
+      await ctx.w.KT.engine.start();
+      ctx.w.KT.engine.pause();
+      st = ctx.w.KT.engine.getState();
+      check('rota da tarde com 6 alunos', st.shift === 'afternoon' && st.stats.total === 6, JSON.stringify(st.stats));
+      check(
+        'todos aguardando embarque na escola',
+        st.stats.waiting === 6 && st.stats.picked === 0 && st.stats.delivered === 0,
+        JSON.stringify(st.stats)
+      );
+
+      const schoolAfternoon = ctx.w.KT.store.get().school;
+      const afternoonStart = st.geometry[0];
+      const afternoonEnd = st.geometry[st.geometry.length - 1];
+      const lastAfternoonStudent = ctx.w.KT.store.student('stu_8');
+      check(
+        'trajeto da tarde começa na escola',
+        !!afternoonStart && KT.geo.haversine(afternoonStart, schoolAfternoon) < 1500,
+        afternoonStart ? Math.round(KT.geo.haversine(afternoonStart, schoolAfternoon)) + ' m' : 'sem geometria'
+      );
+      check(
+        'trajeto da tarde termina na última residência, sem voltar à escola',
+        !!afternoonEnd &&
+          KT.geo.haversine(afternoonEnd, lastAfternoonStudent) < 500 &&
+          KT.geo.haversine(afternoonEnd, schoolAfternoon) > 500,
+        afternoonEnd
+          ? `${Math.round(KT.geo.haversine(afternoonEnd, lastAfternoonStudent))} m da última casa · ${Math.round(KT.geo.haversine(afternoonEnd, schoolAfternoon))} m da escola`
+          : 'sem geometria'
+      );
+
+      await go(ctx, 'inicio');
+      d = ctx.d;
+      check('painel do motorista na tarde', /Rota da Tarde|tarde/i.test(d.body.textContent), 'tarde');
+      check('botões de embarque individual no painel', qa(d, '[data-board]').length === 6, qa(d, '[data-board]').length + ' botões');
+
+      const afternoonStatus = ctx.w.KT.store.route('route-afternoon').status;
+      check(
+        'finalização bloqueada com pendências',
+        ctx.w.KT.engine.finish('manual') === false && (afternoonStatus === 'running' || afternoonStatus === 'paused'),
+        afternoonStatus
+      );
+
+      const beforeNoBoard = ctx.w.KT.store.student('stu_4').status;
+      const dropWithoutBoard = ctx.w.KT.engine.confirmDropOff('stu_4');
+      check(
+        'entrega sem embarque é bloqueada',
+        dropWithoutBoard === false && ctx.w.KT.store.student('stu_4').status === beforeNoBoard && !ctx.w.KT.store.student('stu_4').deliveredAt,
+        'sem alteração'
+      );
+
+      const g1Before = ctx.w.KT.store.notificationsFor('guardian', 'gua_1').length;
+      const g2Before = ctx.w.KT.store.notificationsFor('guardian', 'gua_2').length;
+      check(
+        'embarque individual de Ana',
+        ctx.w.KT.engine.boardStudent('stu_1') === true && ctx.w.KT.store.student('stu_1').status === 'picked' && !!ctx.w.KT.store.student('stu_1').boardedAt,
+        'picked'
+      );
+      check(
+        'embarque individual de Sofia',
+        ctx.w.KT.engine.boardStudent('stu_3') === true && ctx.w.KT.store.student('stu_3').status === 'picked',
+        'picked'
+      );
+
+      const g1Boarding = ctx.w.KT.store.notificationsFor('guardian', 'gua_1');
+      check(
+        'embarque notifica apenas a família de Ana',
+        g1Boarding.length > g1Before &&
+          g1Boarding.some((n) => n.type === 'boarding' && n.studentId === 'stu_1') &&
+          ctx.w.KT.store.notificationsFor('guardian', 'gua_2').length === g2Before,
+        'segmentado'
+      );
+
+      check(
+        'entrega de Ana confirmada pelo motorista',
+        ctx.w.KT.engine.confirmDropOff('stu_1') === true &&
+          ctx.w.KT.store.student('stu_1').status === 'delivered' &&
+          !!ctx.w.KT.store.student('stu_1').deliveredAt,
+        'delivered'
+      );
+      check(
+        'entrega notifica a família de Ana',
+        ctx.w.KT.store.notificationsFor('guardian', 'gua_1').some((n) => n.type === 'home' && n.studentId === 'stu_1'),
+        'home'
+      );
+      check('entrega duplicada é bloqueada', ctx.w.KT.engine.confirmDropOff('stu_1') === false, 'bloqueada');
+      check(
+        'aluno entregue não pode embarcar de novo',
+        ctx.w.KT.engine.boardStudent('stu_1') === false && ctx.w.KT.store.student('stu_1').status === 'delivered',
+        'bloqueado'
+      );
+      check('falha de entrega sem embarque é bloqueada', ctx.w.KT.engine.failDelivery('stu_6') === false, 'bloqueada');
+      check(
+        'embarque de Pedro',
+        ctx.w.KT.engine.boardStudent('stu_6') === true && ctx.w.KT.store.student('stu_6').status === 'picked',
+        'picked'
+      );
+      check(
+        'falha de entrega registrada',
+        ctx.w.KT.engine.failDelivery('stu_6') === true &&
+          ctx.w.KT.store.student('stu_6').status === 'no_delivery' &&
+          !!ctx.w.KT.store.student('stu_6').noDeliveryAt,
+        'no_delivery'
+      );
+      check(
+        'falha notifica a família de Pedro',
+        ctx.w.KT.store.notificationsFor('guardian', 'gua_3').some((n) => n.type === 'no_delivery' && n.studentId === 'stu_6'),
+        'no_delivery'
+      );
+      check('entrega de Sofia confirmada', ctx.w.KT.engine.confirmDropOff('stu_3') === true, 'delivered');
+
+      let skips = 0;
+      for (let i = 0; i < 4; i++) {
+        if (ctx.w.KT.engine.skipCurrent()) skips++;
+      }
+      check('alunos restantes marcados como não embarcaram', skips === 3, skips + ' ocorrências');
+
+      st = ctx.w.KT.engine.getState();
+      check(
+        'todos os alunos com status final',
+        st.allFinal === true &&
+          st.stats.delivered === 2 &&
+          st.stats.noDelivery === 1 &&
+          st.stats.issues === 3 &&
+          st.stats.pendingDelivery === 0,
+        JSON.stringify(st.stats)
+      );
+      check(
+        'finalização da tarde liberada',
+        ctx.w.KT.engine.finish('manual') === true && ctx.w.KT.store.route('route-afternoon').status === 'done',
+        'done'
+      );
+
+      const afternoonHistory = ctx.w.KT.store.history().find((h) => h.routeId === 'route-afternoon' && h.finishedBy === 'manual');
+      check(
+        'histórico da tarde gravado',
+        !!afternoonHistory &&
+          afternoonHistory.shift === 'afternoon' &&
+          afternoonHistory.total === 6 &&
+          afternoonHistory.delivered === 2 &&
+          afternoonHistory.noDelivery === 1 &&
+          afternoonHistory.issues === 3,
+        afternoonHistory
+          ? JSON.stringify({ total: afternoonHistory.total, delivered: afternoonHistory.delivered, noDelivery: afternoonHistory.noDelivery, issues: afternoonHistory.issues })
+          : 'sem histórico'
+      );
+      check(
+        'horários de embarque e entrega registrados',
+        !!ctx.w.KT.store.student('stu_1').boardedAt &&
+          !!ctx.w.KT.store.student('stu_1').deliveredAt &&
+          !!ctx.w.KT.store.student('stu_6').noDeliveryAt,
+        'timestamps'
+      );
+
+      /* ---- Área do responsável após a entrega ---- */
+      const guardianAfternoonLogin = await ctx.w.KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'guardian');
+      check(
+        'login do responsável após a tarde',
+        guardianAfternoonLogin.ok === true && guardianAfternoonLogin.session.guardianId === 'gua_1',
+        guardianAfternoonLogin.session && guardianAfternoonLogin.session.guardianId
+      );
+      ctx = await mountApp(1440);
+      d = ctx.d;
+      await sleep(500);
+      const guardianText = d.body.textContent;
+      const boardedTime = ctx.w.KT.fmt.time(ctx.w.KT.store.student('stu_1').boardedAt);
+      const deliveredTime = ctx.w.KT.fmt.time(ctx.w.KT.store.student('stu_1').deliveredAt);
+      check('responsável vê status entregue', /Entregue em casa/i.test(guardianText), 'status');
+      check('responsável vê horário de embarque', guardianText.includes(boardedTime), boardedTime);
+      check('responsável vê horário de entrega', guardianText.includes(deliveredTime), deliveredTime);
+      check(
+        'responsável vê apenas o próprio filho',
+        /Ana Beatriz/.test(guardianText) && !/Pedro Henrique/.test(guardianText) && !/Lucas Ferreira/.test(guardianText),
+        'escopo por família'
+      );
+      check('rota concluída no painel da família', /Concluída|Rota concluída/i.test(guardianText), 'concluída');
+
+      /* ================================================================
+         5. Isolamento de segurança e segmentação
+         ================================================================ */
+      const gs = ctx.w.KT.store;
+      const guardianAna = gs.guardianForStudent('stu_1');
+      const guardianLucas = gs.guardianForStudent('stu_2');
+      check(
+        'cada aluno tem seu próprio responsável',
+        !!guardianAna && !!guardianLucas && guardianAna.id === 'gua_1' && guardianLucas.id === 'gua_2' && guardianAna.id !== guardianLucas.id,
+        guardianAna && guardianLucas ? guardianAna.id + ' / ' + guardianLucas.id : 'sem vínculo'
+      );
+      check(
+        'avisos do responsável são apenas do próprio filho',
+        gs.notificationsFor('guardian', 'gua_1').every((n) => !n.studentId || n.studentId === 'stu_1'),
+        'escopo de notificações'
+      );
+      check(
+        'família não vê avisos de outra família',
+        !gs.notificationsFor('guardian', 'gua_2').some((n) => n.studentId === 'stu_1'),
+        'isolamento'
+      );
+      check(
+        'filhos vinculados restritos',
+        gs.guardianChildren(guardianAna).every((s) => s.id === 'stu_1'),
+        'vínculo único'
+      );
+
+      const wrongDriverRole = await gs.login('motorista@kombitech.app', 'kombi1234', true, 'guardian');
+      check(
+        'perfil motorista não entra na área da família',
+        wrongDriverRole.ok === false && /motorista/i.test(wrongDriverRole.error || ''),
+        wrongDriverRole.error
+      );
+      const wrongGuardianRole = await gs.login('responsavel@kombitech.app', 'kombi1234', true, 'driver');
+      check(
+        'perfil responsável não entra como motorista',
+        wrongGuardianRole.ok === false && /responsável/i.test(wrongGuardianRole.error || ''),
+        wrongGuardianRole.error
+      );
+
+      const beforeAna = gs.notificationsFor('guardian', 'gua_1').length;
+      const targeted = gs.notifyGuardianForStudent('stu_2', 'boarding', 'Teste de segmentação', 'Somente a família do Lucas deve receber.');
+      check(
+        'notificação é entregue ao responsável correto',
+        !!targeted && targeted.guardianId === 'gua_2' && gs.notificationsFor('guardian', 'gua_1').length === beforeAna,
+        targeted && targeted.guardianId
+      );
+
+      const plainDb = JSON.stringify(gs.get());
+      check('nenhuma senha em texto puro no armazenamento', !/"password"\s*:/i.test(plainDb) && !/"senha"\s*:/i.test(plainDb), 'sem campo de senha');
+      check(
+        'responsáveis não armazenam senha em texto puro',
+        gs.guardians().every((g) => !('password' in g) && (!g.auth || !('password' in g.auth))),
+        'ok'
+      );
+      const hashes = gs.guardians().map((g) => g.auth && g.auth.hash).filter(Boolean);
+      check(
+        'senhas armazenadas como hash SHA-256',
+        hashes.length > 0 && hashes.every((h) => /^[a-f0-9]{64}$/.test(h)),
+        hashes.length + ' hashes'
+      );
+      const demoGuardian = gs.guardian('gua_4');
+      check(
+        'conta de primeiro acesso não tem senha compartilhada',
+        !!demoGuardian && !!demoGuardian.auth && demoGuardian.auth.hash === null && demoGuardian.auth.active === false,
+        'sem senha padrão'
+      );
+      const authStatus = gs.guardianAuthStatus('gua_1');
+      check(
+        'status de autenticação não expõe hash',
+        !!authStatus && !('hash' in authStatus) && !JSON.stringify(authStatus).includes(gs.guardian('gua_1').auth.hash),
+        'ok'
+      );
+
+      const stu3Before = gs.student('stu_3');
+      const oldGuardianId = gs.guardianForStudent('stu_3').id;
+      gs.saveStudent(Object.assign({}, stu3Before, { guardianEmail: 'novo.responsavel@kombitech.app' }));
+      const stu3After = gs.guardianForStudent('stu_3');
+      check(
+        'troca de e-mail desvincula a família anterior',
+        !!stu3After &&
+          stu3After.email === 'novo.responsavel@kombitech.app' &&
+          !(gs.guardian(oldGuardianId).studentIds || []).includes('stu_3'),
+        oldGuardianId + ' -> ' + (stu3After && stu3After.email)
+      );
+
+      await appLogout(ctx);
+      check('sem erros de runtime capturados', errors.length === 0, errors.join(' | ') || 'nenhum');
+
+      const failed = results.filter((r) => !r.ok);
+      lines.push('');
+      lines.push(`RESULTADO: ${results.length - failed.length}/${results.length} verificações passaram, ${failed.length} falharam`);
+      if (errors.length) lines.push('ERROS: ' + errors.join(' | '));
+      out.textContent = lines.join('\n');
+      document.title = failed.length === 0 ? `QA V2 OK ${results.length}` : `QA V2 FAIL ${failed.length}`;
+    } catch (err) {
+      logError('harness', err && (err.stack || err.message || err));
+      const failed = results.filter((r) => !r.ok);
+      lines.push('');
+      lines.push(`RESULTADO PARCIAL: ${results.length - failed.length}/${results.length} passaram`);
+      out.textContent = lines.join('\n');
+      document.title = 'QA V2 CRASH';
+    }
+  })();
+  </script>
+</body>
+</html>

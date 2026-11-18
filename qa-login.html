@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>KombiTech QA Login</title>
+  <style>body{font:13px/1.5 monospace;background:#0d1b2a;color:#e8f0fa;padding:20px}#out{white-space:pre-wrap;position:relative;z-index:2;background:#0d1b2a}iframe{position:absolute;left:0;top:0;width:1440px;height:1000px;border:0;z-index:1}</style>
+</head>
+<body>
+  <pre id="out">iniciando…</pre>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/services.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    const lines = [];
+    const results = [];
+    const errors = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+    function check(name, ok, detail) {
+      results.push({ name, ok: !!ok });
+      log((ok ? 'PASS  ' : 'FAIL  ') + name + (detail ? ' — ' + detail : ''));
+    }
+    async function waitFor(fn, timeout) {
+      const end = Date.now() + (timeout || 12000);
+      while (Date.now() < end) {
+        try { if (fn()) return true; } catch (e) {}
+        await sleep(100);
+      }
+      return false;
+    }
+    let frame = null;
+    async function loadIndex() {
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.src = 'index.html';
+      document.body.appendChild(frame);
+      await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      w.addEventListener('error', (e) => errors.push('error: ' + (e.message || e.error)));
+      w.addEventListener('unhandledrejection', (e) => errors.push('promise: ' + (e.reason && (e.reason.message || e.reason))));
+      await waitFor(() => d.querySelector('#roleSwitch') && d.querySelector('#loginForm'), 10000);
+      return { w, d };
+    }
+    try {
+      await KT.store.resetDemo();
+      KT.store.logout();
+
+      let { w, d } = await loadIndex();
+      check('tela de login carregada', !!d.querySelector('#loginForm'), d.title);
+      check('motorista ativo por padrão', d.querySelector('.auth-role.active').getAttribute('data-role') === 'driver', d.querySelector('#authTitle').textContent);
+      check('dois perfis visíveis', d.querySelectorAll('.auth-role').length === 2, d.querySelectorAll('.auth-role').length + ' abas');
+      check('duas contas demo visíveis', d.querySelectorAll('.auth-demo-account').length === 2, d.querySelectorAll('.auth-demo-account').length + ' contas');
+
+      d.querySelector('[data-role="guardian"]').click();
+      await sleep(200);
+      check('aba responsável ativa', d.querySelector('.auth-role.active').getAttribute('data-role') === 'guardian', d.querySelector('#authTitle').textContent);
+      check('título da família', /Área da família/i.test(d.querySelector('#authTitle').textContent), d.querySelector('#authTitle').textContent);
+      check('rótulo demo do responsável', /responsável/i.test(d.querySelector('#demoBtnLabel').textContent), d.querySelector('#demoBtnLabel').textContent);
+      check('placeholder do responsável', d.querySelector('#email').placeholder === 'responsavel@kombitech.app', d.querySelector('#email').placeholder);
+      check('conta demo destacada', d.querySelector('#demoGuardianRow').classList.contains('active') && !d.querySelector('#demoDriverRow').classList.contains('active'), 'linha correta');
+
+      d.querySelector('#fillDemoGuardian').click();
+      await sleep(150);
+      check('preenche e-mail do responsável', d.querySelector('#email').value === 'responsavel@kombitech.app', d.querySelector('#email').value);
+      check('preenche senha demo', d.querySelector('#password').value === 'kombi1234', 'senha preenchida');
+      check('consentimento marcado', d.querySelector('#consent').checked === true, 'LGPD');
+      d.querySelector('#loginForm').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+      const guardianBoot = await waitFor(() => {
+        try {
+          const doc = frame.contentDocument;
+          return frame.contentWindow.location.pathname.endsWith('/app.html') && doc.querySelector('#app .sidebar') && /Responsável|Acompanhe|filho/i.test(doc.body.textContent);
+        } catch (e) { return false; }
+      }, 15000);
+      check('login real do responsável', guardianBoot, frame.contentWindow.location.pathname);
+      if (guardianBoot) {
+        const gd = frame.contentDocument;
+        check('shell do responsável após login', gd.querySelectorAll('.nav-item').length === 5, gd.querySelectorAll('.nav-item').length + ' itens');
+      }
+
+      KT.store.logout();
+      ({ w, d } = await loadIndex());
+      d.querySelector('#fillDemoDriver').click();
+      await sleep(150);
+      check('preenche e-mail do motorista', d.querySelector('#email').value === 'motorista@kombitech.app', d.querySelector('#email').value);
+      d.querySelector('#loginForm').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+      const driverBoot = await waitFor(() => {
+        try {
+          const doc = frame.contentDocument;
+          return frame.contentWindow.location.pathname.endsWith('/app.html') && doc.querySelector('#app .sidebar') && /Início|Motorista|rota/i.test(doc.body.textContent);
+        } catch (e) { return false; }
+      }, 15000);
+      check('login real do motorista', driverBoot, frame.contentWindow.location.pathname);
+      if (driverBoot) {
+        const dd = frame.contentDocument;
+        check('shell do motorista após login', dd.querySelectorAll('.nav-item').length === 9, dd.querySelectorAll('.nav-item').length + ' itens');
+      }
+
+      check('sem erros de runtime no login', errors.length === 0, errors.join(' | ') || 'nenhum');
+      const failed = results.filter((r) => !r.ok).length;
+      log('');
+      log('RESULTADO: ' + (results.length - failed) + '/' + results.length + ' passaram, ' + failed + ' falharam');
+      document.title = failed ? 'LOGIN FAIL ' + failed : 'LOGIN OK ' + results.length;
+    } catch (e) {
+      log('CRASH: ' + (e && (e.stack || e.message || e)));
+      document.title = 'LOGIN CRASH';
+    }
+  })();
+  </script>
+</body>
+</html>

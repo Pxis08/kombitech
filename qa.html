@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>KombiTech QA</title>
+  <style>
+    body{font:14px/1.45 monospace;background:#0d1b2a;color:#e8f0fa;padding:20px}
+    #out{white-space:pre-wrap;max-width:1100px}
+    iframe{position:fixed;left:-9999px;top:0;width:1440px;height:1000px;border:0}
+    .ok{color:#6ee7a8}.fail{color:#ff8a8a}.warn{color:#ffd166}
+  </style>
+</head>
+<body>
+  <pre id="out">iniciando…</pre>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/services.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script>
+  (async function () {
+    'use strict';
+    const out = document.getElementById('out');
+    const results = [];
+    const errors = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const lines = [];
+
+    function check(name, ok, detail) {
+      results.push({ name, ok: !!ok, detail: detail == null ? '' : String(detail) });
+      lines.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+      out.textContent = lines.join('\n');
+    }
+    function warn(name, detail) {
+      lines.push(`WARN  ${name}${detail ? ' — ' + detail : ''}`);
+      out.textContent = lines.join('\n');
+    }
+    function logError(source, message) {
+      errors.push(source + ': ' + message);
+      lines.push('ERROR ' + source + ': ' + message);
+      out.textContent = lines.join('\n');
+    }
+    async function waitFor(fn, timeout, label) {
+      const end = Date.now() + (timeout || 7000);
+      while (Date.now() < end) {
+        try { if (fn()) return true; } catch (e) { /* keep waiting */ }
+        await sleep(80);
+      }
+      throw new Error('timeout: ' + (label || 'waitFor'));
+    }
+    function q(doc, sel) { return doc.querySelector(sel); }
+    function qa(doc, sel) { return Array.from(doc.querySelectorAll(sel)); }
+    function txt(doc, sel) { const el = q(doc, sel); return el ? el.textContent.trim() : ''; }
+    function click(el) {
+      if (!el) throw new Error('elemento inexistente para clique');
+      el.click();
+    }
+    function fire(el, type) {
+      const w = el.ownerDocument.defaultView;
+      el.dispatchEvent(new w.Event(type, { bubbles: true }));
+    }
+
+    let frame = null;
+    async function mountApp(width) {
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.style.width = (width || 1440) + 'px';
+      frame.style.height = '1000px';
+      frame.src = 'app.html';
+      document.body.appendChild(frame);
+      await new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      w.addEventListener('error', (e) => logError('iframe', e.message || e.error));
+      w.addEventListener('unhandledrejection', (e) => logError('promise', e.reason && (e.reason.message || e.reason)));
+      await waitFor(() => q(d, '#app .sidebar') && q(d, '#view') && q(d, '#view').children.length > 0, 12000, 'app boot');
+      await sleep(500);
+      return { frame, w, d };
+    }
+    async function go(ctx, name) {
+      ctx.w.location.hash = '#/' + name;
+      await sleep(450);
+      await waitFor(() => q(ctx.d, '#view') && q(ctx.d, '#view').children.length > 0, 5000, 'view ' + name);
+      await sleep(150);
+      return ctx.d.querySelector('#view');
+    }
+    async function appLogout(ctx) {
+      try { ctx.w.KT.store.logout(); } catch (e) {}
+      if (ctx.frame && ctx.frame.parentNode) ctx.frame.parentNode.removeChild(ctx.frame);
+      frame = null;
+      await sleep(150);
+    }
+
+    try {
+      window.addEventListener('error', (e) => logError('parent', e.message || e.error));
+      window.addEventListener('unhandledrejection', (e) => logError('parent-promise', e.reason && (e.reason.message || e.reason)));
+
+      await KT.store.resetDemo();
+      check('store.resetDemo', !!KT.store.get(), 'DB reiniciado');
+
+      /* ---- Controle de acesso por perfil ---- */
+      const wrongRole = await KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'driver');
+      check('login bloqueia responsável na aba motorista', wrongRole.ok === false && /responsável/i.test(wrongRole.error || ''), wrongRole.error || 'sem erro');
+      const wrongRole2 = await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'guardian');
+      check('login bloqueia motorista na aba responsável', wrongRole2.ok === false && /motorista/i.test(wrongRole2.error || ''), wrongRole2.error || 'sem erro');
+
+      const driverLogin = await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      check('login do motorista', driverLogin.ok === true && driverLogin.session.role === 'driver', driverLogin.session && driverLogin.session.role);
+
+      let ctx = await mountApp(1440);
+      let d = ctx.d;
+      check('shell do motorista', qa(d, '.nav-item').length === 9, qa(d, '.nav-item').length + ' itens');
+      check('mobile do motorista tem 5 ações', qa(d, '.mnav-item').length === 5, qa(d, '.mnav-item').length + ' itens');
+      check('dashboard do motorista renderizado', !!q(d, '#view .hero') && !!q(d, '#view .map-shell'), 'hero + mapa');
+      check('sem tela de erro no boot', !/#view[\s\S]*Não foi possível abrir esta tela/.test(d.body.innerHTML), 'ok');
+
+      /* ---- Motor de rota + notificações ---- */
+      await ctx.w.KT.actions.start();
+      ctx.w.KT.actions.pause();
+      await sleep(250);
+      check('rota iniciada', ctx.w.KT.engine.isActive() === true, JSON.stringify(ctx.w.KT.engine.getState().stats));
+      check('pausar rota', ctx.w.KT.engine.isPaused() === true, 'pausada');
+      const nextStop = ctx.w.KT.engine.getState().next;
+      const nextGuardian = nextStop ? ctx.w.KT.store.guardianForStudent(nextStop.id) : null;
+      const beforeBoarding = nextGuardian ? ctx.w.KT.store.notificationsFor('guardian', nextGuardian.id).length : 0;
+      ctx.w.KT.actions.confirmPick();
+      await sleep(350);
+      const afterBoarding = nextGuardian ? ctx.w.KT.store.notificationsFor('guardian', nextGuardian.id) : [];
+      check('embarque notifica responsável', !!nextGuardian && afterBoarding.length > beforeBoarding && afterBoarding.some((n) => n.type === 'boarding'), afterBoarding[0] && afterBoarding[0].title);
+      ctx.w.KT.actions.resume();
+      await sleep(200);
+      check('retomar rota', ctx.w.KT.engine.isPaused() === false, 'em andamento');
+
+      /* ---- Rotas e trânsito ---- */
+      await go(ctx, 'rotas');
+      d = ctx.d;
+      check('painel de trânsito', !!q(d, '#trafficPanel .traffic-grid'), txt(d, '#trafficPanel .traffic-head .strong'));
+      check('cartões de rota', qa(d, '#routeCards .route-card').length >= 2, qa(d, '#routeCards .route-card').length + ' rotas');
+      check('editor de paradas', qa(d, '#routeEditor .stop').length >= 1, qa(d, '#routeEditor .stop').length + ' paradas');
+      const incident = ctx.w.KT.store.trafficIncidents()[0];
+      check('imprevisto de trânsito semeado', !!incident, incident && incident.title);
+      if (incident) {
+        const beforeHazard = ctx.w.KT.store.notificationsFor('guardian', 'gua_1').length;
+        const alertBtn = q(d, '[data-alert-traffic]');
+        check('botão de avisar trânsito visível durante rota', !!alertBtn, alertBtn ? alertBtn.textContent.trim() : 'ausente');
+        if (alertBtn) {
+          click(alertBtn);
+          await sleep(350);
+          check('aviso de trânsito notifica responsável', ctx.w.KT.store.notificationsFor('guardian', 'gua_1').length > beforeHazard, 'notificação criada');
+        }
+      }
+
+      /* ---- Mensagens ---- */
+      await go(ctx, 'mensagens');
+      d = ctx.d;
+      check('layout de conversas do motorista', !!q(d, '.chat-layout') && qa(d, '.chat-conv').length >= 2, qa(d, '.chat-conv').length + ' conversas');
+      const firstConv = q(d, '.chat-conv');
+      if (firstConv) click(firstConv);
+      await sleep(250);
+      d = ctx.d;
+      const activeConv = q(d, '.chat-conv.active');
+      const activeConvId = activeConv ? activeConv.getAttribute('data-conv') : null;
+      const msgBefore = activeConvId ? ctx.w.KT.store.messages(activeConvId).length : 0;
+      const input = q(d, '#chatInput');
+      if (input && activeConvId) {
+        input.value = 'Mensagem de teste do motorista';
+        const form = q(d, '[data-chat-form]');
+        form.dispatchEvent(new ctx.w.Event('submit', { bubbles: true, cancelable: true }));
+        await sleep(300);
+        check('envio de mensagem do motorista', ctx.w.KT.store.messages(activeConvId).length > msgBefore, 'mensagem salva');
+      } else {
+        check('campo de mensagem do motorista', false, 'não encontrado');
+      }
+
+      /* ---- Calendário ---- */
+      await go(ctx, 'calendario');
+      d = ctx.d;
+      check('grade do calendário', qa(d, '.cal-grid .cal-day').length === 42, qa(d, '.cal-grid .cal-day').length + ' células');
+      const calBefore = ctx.w.KT.store.calendarEvents().length;
+      click(q(d, '[data-add]'));
+      await sleep(250);
+      const modal = q(d, '#modal-root .modal, #modal-root [role="dialog"]') || q(d, '#modal-root .modal-card');
+      check('modal de novo evento', !!q(d, '#calTitle'), modal ? 'modal aberto' : 'sem modal');
+      if (q(d, '#calTitle')) {
+        q(d, '#calTitle').value = 'Reunião de teste';
+        const dateInput = q(d, '#calDate');
+        if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+        click(q(d, '#saveCalEvent'));
+        await sleep(450);
+        check('evento salvo no calendário', ctx.w.KT.store.calendarEvents().length === calBefore + 1, ctx.w.KT.store.calendarEvents().length + ' eventos');
+      }
+
+      /* ---- Relatórios e configurações ---- */
+      await go(ctx, 'relatorios');
+      d = ctx.d;
+      check('relatórios renderizados', !!q(d, '#view .chart-grid') || qa(d, '#view svg').length >= 2, qa(d, '#view svg').length + ' SVGs');
+      await go(ctx, 'configuracoes');
+      d = ctx.d;
+      check('configurações com Google Maps', /Google Maps/i.test(d.body.textContent), 'texto encontrado');
+      check('aviso de demonstração/GPS', /simulad|GPS real|demonstra/i.test(d.body.textContent), 'texto encontrado');
+
+      /* ---- Perfil do motorista + aviso de van ---- */
+      await go(ctx, 'perfil');
+      d = ctx.d;
+      check('perfil do motorista', /Perfil do motorista/i.test(d.body.textContent), 'ok');
+      const vanNotifBefore = ctx.w.KT.store.notificationsFor('guardian', 'gua_1').filter((n) => n.type === 'van').length;
+      click(q(d, '[data-edit]'));
+      await sleep(250);
+      if (q(d, '#pVanPlate')) {
+        q(d, '#pVanPlate').value = 'FKN-9Z99';
+        click(q(d, '#saveProfile'));
+        await sleep(450);
+        check('placa da van atualizada', ctx.w.KT.store.driver().van.plate === 'FKN-9Z99', ctx.w.KT.store.driver().van.plate);
+        const vanNotifs = ctx.w.KT.store.notificationsFor('guardian', 'gua_1').filter((n) => n.type === 'van');
+        check('troca de van notifica responsável', vanNotifs.length > vanNotifBefore, vanNotifs[0] && vanNotifs[0].title);
+      } else {
+        check('modal de edição do perfil', false, 'campos não encontrados');
+      }
+
+      /* ---- Responsivo do motorista ---- */
+      await go(ctx, 'inicio');
+      ctx.frame.style.width = '390px';
+      ctx.w.dispatchEvent(new ctx.w.Event('resize'));
+      await sleep(500);
+      d = ctx.d;
+      check('nav mobile visível em 390px', getComputedStyle(q(d, '.mobile-nav')).display !== 'none', getComputedStyle(q(d, '.mobile-nav')).display);
+      check('menu mobile visível em 390px', getComputedStyle(q(d, '#menuBtn')).display !== 'none', getComputedStyle(q(d, '#menuBtn')).display);
+      check('barra de rota mobile', getComputedStyle(q(d, '.mobile-routebar')).display !== 'none', getComputedStyle(q(d, '.mobile-routebar')).display);
+
+      await appLogout(ctx);
+
+      /* ---- Área do responsável ---- */
+      const guardianLogin = await KT.store.login('responsavel@kombitech.app', 'kombi1234', true, 'guardian');
+      check('login do responsável', guardianLogin.ok === true && guardianLogin.session.role === 'guardian', guardianLogin.session && guardianLogin.session.role);
+      ctx = await mountApp(1440);
+      d = ctx.d;
+      check('shell do responsável', qa(d, '.nav-item').length === 5, qa(d, '.nav-item').length + ' itens');
+      check('mobile do responsável tem 5 ações', qa(d, '.mnav-item').length === 5, qa(d, '.mnav-item').length + ' itens');
+      check('sem itens exclusivos do motorista', !/Alunos|Relatórios|Calendário/.test(q(d, '.sidebar').textContent), 'ok');
+      check('início do responsável', /Acompanhe|rota|van|filho/i.test(d.body.textContent), 'hero da família');
+      check('mapa do responsável montado', !!q(d, '#gHomeMap'), 'container presente');
+      check('status do filho', /Ana Beatriz/i.test(d.body.textContent), 'aluno vinculado');
+      check('aviso de posição simulada', /posição simulada/i.test(d.body.textContent), 'rótulo demo');
+
+      await go(ctx, 'mapa');
+      d = ctx.d;
+      check('mapa dedicado do responsável', !!q(d, '#gMap') && !!q(d, '#gMapSide'), 'mapa + lateral');
+      check('privacidade no mapa', /Acesso restrito|Somente seu filho/i.test(d.body.textContent), 'aviso LGPD');
+
+      await go(ctx, 'notificacoes');
+      d = ctx.d;
+      check('filtros de notificações', qa(d, '.filter-chip').length >= 6, qa(d, '.filter-chip').length + ' filtros');
+      check('cartões de notificação', qa(d, '.notif-card').length >= 1, qa(d, '.notif-card').length + ' avisos');
+      click(q(d, '[data-filter="van"]'));
+      await sleep(250);
+      d = ctx.d;
+      check('filtro de van funciona', qa(d, '.notif-card').length >= 1, qa(d, '.notif-card').length + ' avisos de van');
+      click(q(d, '[data-mark-read]'));
+      await sleep(250);
+      check('marcar notificações como lidas', ctx.w.KT.store.notificationsFor('guardian', 'gua_1').every((n) => n.read), 'todas lidas');
+
+      await go(ctx, 'mensagens');
+      d = ctx.d;
+      check('chat do responsável', !!q(d, '.guardian-chat-wrap') && !!q(d, '#chatThread'), 'canal direto');
+      check('mensagem do motorista visível', /Mensagem de teste do motorista/i.test(d.body.textContent), 'histórico carregado');
+      const gInput = q(d, '#chatInput');
+      if (gInput) {
+        const conv = ctx.w.KT.store.conversationForGuardian('gua_1');
+        const before = ctx.w.KT.store.messages(conv.id).length;
+        gInput.value = 'Resposta de teste do responsável';
+        q(d, '[data-chat-form]').dispatchEvent(new ctx.w.Event('submit', { bubbles: true, cancelable: true }));
+        await sleep(300);
+        check('envio de mensagem do responsável', ctx.w.KT.store.messages(conv.id).length > before, 'mensagem salva');
+      } else {
+        check('campo de mensagem do responsável', false, 'não encontrado');
+      }
+
+      await go(ctx, 'perfil');
+      d = ctx.d;
+      check('perfil do responsável', /Perfil do responsável/i.test(d.body.textContent), 'ok');
+      check('preferências de notificação', qa(d, '[data-pref]').length >= 6, qa(d, '[data-pref]').length + ' opções');
+      const vanPref = q(d, '[data-pref="notifyVan"]');
+      if (vanPref) {
+        vanPref.checked = false;
+        fire(vanPref, 'change');
+        await sleep(250);
+        check('preferência de van salva', ctx.w.KT.store.guardian('gua_1').preferences.notifyVan === false, JSON.stringify(ctx.w.KT.store.guardian('gua_1').preferences));
+      } else {
+        check('preferência de van', false, 'não encontrada');
+      }
+      check('LGPD no perfil', /LGPD|privacidade/i.test(d.body.textContent), 'texto presente');
+
+      await appLogout(ctx);
+      check('sem erros de runtime capturados', errors.length === 0, errors.join(' | ') || 'nenhum');
+
+      const failed = results.filter((r) => !r.ok);
+      lines.push('');
+      lines.push(`RESULTADO: ${results.length - failed.length}/${results.length} verificações passaram, ${failed.length} falharam`);
+      if (errors.length) lines.push('ERROS: ' + errors.join(' | '));
+      out.textContent = lines.join('\n');
+      document.title = failed.length === 0 ? `QA OK ${results.length}` : `QA FAIL ${failed.length}`;
+    } catch (err) {
+      logError('harness', err && (err.stack || err.message || err));
+      const failed = results.filter((r) => !r.ok);
+      lines.push('');
+      lines.push(`RESULTADO PARCIAL: ${results.length - failed.length}/${results.length} passaram`);
+      out.textContent = lines.join('\n');
+      document.title = 'QA CRASH';
+    }
+  })();
+  </script>
+</body>
+</html>

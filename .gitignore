@@ -1,0 +1,28 @@
+# Sistema operacional
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editores
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Dependências e build
+node_modules/
+dist/
+build/
+
+# Segredos e configuração local
+.env
+.env.*
+config.local.js
+*.local.js
+
+# Logs e temporários
+*.log
+*.tmp
+
+# Rascunhos locais de QA (não fazem parte do app)
+gtest.html
+shot-seed.html

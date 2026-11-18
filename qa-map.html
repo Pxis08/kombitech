@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>KombiTech QA Map</title>
+  <style>body{font:13px/1.5 monospace;background:#0d1b2a;color:#e8f0fa;padding:20px}#out{white-space:pre-wrap;position:relative;z-index:2;background:#0d1b2a}iframe{position:absolute;left:0;top:0;width:1440px;height:1000px;border:0;z-index:1}</style>
+</head>
+<body>
+  <pre id="out">iniciando…</pre>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/services.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    const lines = [];
+    const errors = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+    async function waitFor(fn, timeout) {
+      const end = Date.now() + (timeout || 15000);
+      while (Date.now() < end) {
+        try { if (fn()) return true; } catch (e) {}
+        await sleep(120);
+      }
+      return false;
+    }
+    try {
+      await KT.store.resetDemo();
+      await KT.store.login('motorista@kombitech.app', 'kombi1234', true, 'driver');
+      const frame = document.createElement('iframe');
+      frame.src = 'app.html';
+      document.body.appendChild(frame);
+      await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      w.addEventListener('error', (e) => errors.push('error: ' + (e.message || e.error)));
+      w.addEventListener('unhandledrejection', (e) => errors.push('promise: ' + (e.reason && (e.reason.message || e.reason))));
+      const booted = await waitFor(() => d.querySelector('#view .map-box') || d.querySelector('#view .map-shell'), 15000);
+      log('app boot: ' + booted);
+      const ready = await waitFor(() => {
+        const box = d.querySelector('#gHomeMap, #dashMap, .map-box');
+        return box && (box.querySelector('.gm-style') || box.querySelector('.svgmap'));
+      }, 18000);
+      const box = d.querySelector('#gHomeMap, #dashMap, .map-box');
+      const gm = box ? box.querySelector('.gm-style') : null;
+      const svg = box ? box.querySelector('.svgmap') : null;
+      log('mapa resolvido: ' + ready);
+      log('backend google (gm-style): ' + !!gm);
+      log('fallback svg: ' + !!svg);
+      log('google global: ' + !!(w.google && w.google.maps));
+      log('google version: ' + (w.google && w.google.maps ? w.google.maps.version : 'n/a'));
+      log('google Marker/Polyline/Size: ' + [w.google && w.google.maps && typeof w.google.maps.Marker, w.google && w.google.maps && typeof w.google.maps.Polyline, w.google && w.google.maps && typeof w.google.maps.Size].join('/'));
+      log('gm-style count: ' + d.querySelectorAll('.gm-style').length);
+      log('map box HTML length: ' + (box ? box.innerHTML.length : 0));
+      log('map box HTML: ' + (box ? box.innerHTML.slice(0, 900).replace(/\s+/g, ' ') : ''));
+      log('map box classes: ' + (box ? box.className : ''));
+      log('erros: ' + (errors.length ? errors.join(' | ') : 'nenhum'));
+      document.title = ready && gm && !svg && errors.length === 0 ? 'MAP GOOGLE OK' : 'MAP CHECK';
+    } catch (e) {
+      log('CRASH: ' + (e && (e.stack || e.message || e)));
+      document.title = 'MAP CRASH';
+    }
+  })();
+  </script>
+</body>
+</html>
