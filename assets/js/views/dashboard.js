@@ -225,8 +225,8 @@
           meta: `${stats.total ? Math.round((stats.delivered / stats.total) * 100) : 0}% da rota concluída`
         }),
         statCard({
-          icon: 'clock', tone: 'gray', label: 'Aguardando entrega', value: stats.picked,
-          meta: `${stats.noDelivery + stats.issues} ocorrência(s) registrada(s)`,
+          icon: 'clock', tone: 'gray', label: 'Restantes na rota', value: stats.waiting + stats.picked,
+          meta: `${stats.picked} a bordo · ${stats.waiting} sem embarcar · ${stats.noDelivery + stats.issues} ocorrência(s)`,
           flag: stats.noDelivery ? String(stats.noDelivery) : null, flagCls: 'b-red'
         }),
         statCard({
